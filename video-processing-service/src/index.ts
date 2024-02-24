@@ -22,7 +22,12 @@ app.post("/process-video", (req, res) => {
             res.status(500).send(`Internal Server Error: ${err.message}`)
         })
         .save(outputFilePath)
+        .ffprobe((err, data)=> {
+            console.log('video metadata:');
+            console.dir(data);
+        })
         
+    
 })
 
 
