@@ -6,17 +6,18 @@ import {
     deleteProcessedLocalFolder,
     deleteRawLocalFile,
     convertVideo,
-    setupDirectories
+    setupDirectories, 
+    transcodeVideo
 } from './storage'
 
-//Create the local directories
-setupDirectories();
+
 
 const app = express();
 app.use(express.json())
 
 // Process a video file from Cloud Storage into multiple resolutions and attach thumbnails
 app.post('/process-video', async (req, res) => {
+
 
     // Get the bucket and filename from the Cloud Pub/Sub message
     let data;
@@ -32,14 +33,19 @@ app.post('/process-video', async (req, res) => {
     }
 
     const inputFileName = data.name;
-    const outputFolderName = `processed-${inputFileName}`;
+    const fileNameWithoutExtension = inputFileName.substring(0, inputFileName.lastIndexOf('.')) || inputFileName;
+    const outputFolderName = `${fileNameWithoutExtension}`;
+
+    //Create the local directories
+    setupDirectories(fileNameWithoutExtension);
 
     // Download the raw video from Cloud Storage
     await downloadRawVideo(inputFileName);
 
     // Process the video into 360p
     try {
-        await convertVideo(inputFileName, outputFolderName)
+        // await convertVideo(inputFileName, outputFolderName)
+        await transcodeVideo(inputFileName, outputFolderName)
     } catch (err) {
         await Promise.all([
             deleteRawLocalFile(inputFileName),

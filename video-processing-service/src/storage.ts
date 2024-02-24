@@ -1,11 +1,12 @@
 import { Storage, TransferManager } from "@google-cloud/storage";
+import { Transcoder } from "simple-hls";
 import fs from 'fs';
 import Ffmpeg from "fluent-ffmpeg";
 
 const storage = new Storage()
 
-const rawVideoBucketName = "sb-google-pm-rw-vid";
-const processedVideoBucketName = "sb-google-pm-processed-vid";
+const rawVideoBucketName = "sb-yt-pm-rw-vid";
+const processedVideoBucketName = "sb-yt-pm-processed-vid";
 
 const transferManager = new TransferManager(storage.bucket(processedVideoBucketName))
 
@@ -15,9 +16,39 @@ const localProcessedVideoPath = "./processed-videos";
 /**
  * Creates local directories for raw and processed videos
  */
-export function setupDirectories() {
+export function setupDirectories(outputFolderName: string) {
     ensureDirectoryExistence(localRawVideoPath);
     ensureDirectoryExistence(localProcessedVideoPath);
+    ensureDirectoryExistence(`./processed-videos/${outputFolderName}`)
+}
+
+
+export async function transcodeVideo(rawVideoName: string, processedVideoName: string) {
+    const outputPath = `${localProcessedVideoPath}/${processedVideoName}`;
+    const t = new Transcoder(`${localRawVideoPath}/${rawVideoName}`, outputPath, { showLogs: false });
+    try {
+        const hlsPath = await t.transcode();
+        console.log('Successfully Transcoded Video');
+    } catch (e) {
+        console.log('Something went wrong');
+    };
+    return new Promise<void>((resolve, reject) => {
+        const inputFilePath = `${localRawVideoPath}/${rawVideoName}`;
+        Ffmpeg(inputFilePath)
+            .screenshots({
+                count: 5,
+                folder: `${localProcessedVideoPath}/${processedVideoName}/thumbnails`,
+                filename: 'thumbnail-at-%s-seconds.png'
+            })
+            .on('end', () => {
+                console.log("Video finished processing and screenshots taken successfully!");
+                resolve();
+            })
+            .on('error', (err) => {
+                console.log(`Error taking screenshots: ${err.message}`);
+                reject(err);
+            });
+    });
 }
 
 /**
@@ -25,7 +56,6 @@ export function setupDirectories() {
  */
 export function convertVideo(rawVideoName: string, processedVideoName: string) {
     const resolutions = [
-        { suffix: '720p', size: '720' },
         { suffix: '480p', size: '480' },
         { suffix: '360p', size: '360' }
     ]
@@ -33,7 +63,7 @@ export function convertVideo(rawVideoName: string, processedVideoName: string) {
     return Promise.all(resolutions.map((resolution) => {
         return new Promise<void>((resolve, reject) => {
             const outputFilePath = processedVideoName.replace(/(\.[\w\d_-]+)$/i, `-${resolution.suffix}$1`);
-            const outputPath = `${localProcessedVideoPath}/${processedVideoName}/${outputFilePath}`;
+            const outputPath = `${localProcessedVideoPath}/${processedVideoName}/${outputFilePath}.mp4`;
             Ffmpeg(inputFilePath)
                 .outputOptions("-vf", `scale=-1:${resolution.size}`)
                 .on("end", () => resolve())
@@ -71,17 +101,19 @@ export async function downloadRawVideo(fileName: string) {
     await storage.bucket(rawVideoBucketName)
         .file(fileName)
         .download({
-            destination: `${localRawVideoPath}/${fileName}/`
+            destination: `${localRawVideoPath}/${fileName}`
         });
     console.log(`gs://${rawVideoBucketName}/${fileName} downloaded to ${localRawVideoPath}/${fileName}`);
 }
 
 
 export async function uploadProcessedVideoFolder(folderName: string) {
+    const folderPath = `${localProcessedVideoPath}/${folderName}`
+
     const bucket = storage.bucket(processedVideoBucketName);
 
     // Uploads the directory
-    await transferManager.uploadManyFiles(folderName)
+    await transferManager.uploadManyFiles(folderPath)
         .then(() => {
             console.log(`${folderName} uploaded successfully.`);
         })
@@ -91,9 +123,10 @@ export async function uploadProcessedVideoFolder(folderName: string) {
 }
 
 export async function deleteProcessedLocalFolder(folderPath: string) {
+    const actualFolderPath = `${localProcessedVideoPath}/${folderPath}`
     return new Promise<void>((resolve, reject) => {
-        if (fs.existsSync(folderPath)) {
-            fs.rm(folderPath, { recursive: true, force: true }, (err) => {
+        if (fs.existsSync(actualFolderPath)) {
+            fs.rm(actualFolderPath, { recursive: true, force: true }, (err) => {
                 if (err) {
                     console.log("Failed to delete folder");
                     reject(err);
@@ -110,19 +143,20 @@ export async function deleteProcessedLocalFolder(folderPath: string) {
 }
 
 export async function deleteRawLocalFile(filePath: string): Promise<void> {
+    const actualFilePath = `${localRawVideoPath}/${filePath}`
     return new Promise((resolve, reject) => {
-        if (fs.existsSync(filePath)) {
-            fs.unlink(filePath, (err) => {
+        if (fs.existsSync(actualFilePath)) {
+            fs.unlink(actualFilePath, (err) => {
                 if (err) {
-                    console.error(`Failed to delete file at ${filePath}`, err);
+                    console.error(`Failed to delete file at ${actualFilePath}`, err);
                     reject(err);
                 } else {
-                    console.log(`File deleted at ${filePath}`);
+                    console.log(`File deleted at ${actualFilePath}`);
                     resolve();
                 }
             });
         } else {
-            console.log(`File not found at ${filePath}, skipping delete.`);
+            console.log(`File not found at ${actualFilePath}, skipping delete.`);
             resolve();
         }
     });
