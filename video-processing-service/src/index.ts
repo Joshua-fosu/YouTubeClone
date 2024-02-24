@@ -13,6 +13,10 @@ app.post("/process-video", (req, res) => {
     }
 
     Ffmpeg(inputFilePath)
+        .screenshots({
+            count: 5,
+            folder: '/path/'
+        })
         .outputOptions("-vf", "scale=-1:360")
         .on("end", () => {
             res.status(200).send("Video processing finished successfully")
