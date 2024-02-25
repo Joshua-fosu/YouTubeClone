@@ -1,4 +1,5 @@
 import express from "express";
+import { isVideoNew, setVideo } from "./firestore";
 
 import {
     uploadProcessedVideoFolder,
@@ -6,8 +7,9 @@ import {
     deleteProcessedLocalFolder,
     deleteRawLocalFile,
     convertVideo,
-    setupDirectories, 
-    transcodeVideo
+    setupDirectories,
+    transcodeVideo,
+    getAllTranscodedFilesInProcessedBucket,
 } from './storage'
 
 
@@ -35,6 +37,17 @@ app.post('/process-video', async (req, res) => {
     const inputFileName = data.name;
     const fileNameWithoutExtension = inputFileName.substring(0, inputFileName.lastIndexOf('.')) || inputFileName;
     const outputFolderName = `${fileNameWithoutExtension}`;
+    const videoId = outputFolderName;
+
+    if (!isVideoNew(videoId)) {
+        return res.status(400).send('Bad Request: video already processing or processed.');
+    } else {
+    await setVideo(videoId, {
+        id: videoId,
+        uid: videoId.split('-')[0],
+        status: 'processing',
+    });
+    }
 
     //Create the local directories
     setupDirectories(fileNameWithoutExtension);
@@ -56,6 +69,17 @@ app.post('/process-video', async (req, res) => {
 
     // Upload the processed video to Cloud Storage
     await uploadProcessedVideoFolder(outputFolderName);
+
+    const fileArr: Array<string> = await getAllTranscodedFilesInProcessedBucket(outputFolderName);
+    console.log(fileArr);
+    console.log("Should return all transcoded files");
+    console.log("Should return all transcoded files");
+    console.log("Should return all transcoded files");
+
+    await setVideo(videoId, {
+        status: 'processed',
+        filetypes: fileArr,
+    });
 
     await Promise.all([
         deleteRawLocalFile(inputFileName),

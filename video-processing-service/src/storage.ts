@@ -162,6 +162,17 @@ export async function deleteRawLocalFile(filePath: string): Promise<void> {
     });
 }
 
+export async function getAllTranscodedFilesInProcessedBucket(folderName: string) {
+    const options = {
+        prefix: `processed-videos/${folderName}/`,
+        // Specify delimiter to treat the prefix as a folder.
+        delimiter: '/',
+    };
+    const [files] = await storage.bucket(processedVideoBucketName).getFiles(options);
+    const fileNames = files.map(file => file.name);
+    return fileNames;
+}
+
 /**
  * 
  */
